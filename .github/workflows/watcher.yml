@@ -28,51 +28,55 @@ jobs:
           import datetime
           import html
 
-          # Define the target pages you want to watch
           pages = ["BolesBulldogsAthletics", "bolesjh"]
           all_items_xml = ""
 
           for page in pages:
+              # Disguise the script request headers perfectly to mimic Google Chrome
               req = urllib.request.Request(
-                  f"https://facebook.com{page}",
-                  headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                  f"https://www.facebook.com/{page}",
+                  headers={
+                      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                      "Accept-Language": "en-US,en;q=0.9"
+                  }
               )
 
               try:
                   with urllib.request.urlopen(req) as response:
                       page_html = response.read().decode("utf-8")
                   
+                  # Target raw text definitions hidden inside Meta script tags
                   matches = re.findall(r"\"text\":\"([^\"]+)\"", page_html)
                   if not matches:
                       continue
 
-                  valid_posts = [p for p in matches if len(p) > 15 and any(k in p for k in ["Boles", "Junior", "game", "sports", "school", "practice", "Athletics", "Bulldogs"])]
-                  live_post = valid_posts if valid_posts else matches
+                  # Filter out structural button noise strings 
+                  valid_posts = [p for p in matches if len(p) > 20 and not any(x in p for x in ["log in", "create account", "privacy", "cookie"])]
                   
-                  live_post = live_post[0].encode().decode("unicode-escape").replace("\\n", "\n")
-                  clean_text = html.escape(live_post)
+                  if valid_posts:
+                      # Decode unicode markers smoothly (\u0020, etc.)
+                      raw_text = valid_posts[0].encode().decode("unicode-escape").replace("\\n", "\n")
+                      clean_text = html.escape(raw_text)
 
-                  now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
-                  
-                  # Append each separate school page post into the core RSS feed body
-                  all_items_xml += f"""
-                  <item>
-                    <title>New Update from {page}</title>
-                    <description>{clean_text}</description>
-                    <link>https://facebook.com{page}</link>
-                    <pubDate>{now}</pubDate>
-                  </item>"""
+                      now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
+                      
+                      all_items_xml += f"""
+                      <item>
+                        <title>New Update from {page}</title>
+                        <description>{clean_text}</description>
+                        <link>https://www.facebook.com/{page}</link>
+                        <pubDate>{now}</pubDate>
+                      </item>"""
 
               except Exception as e:
-                  print(f"Error scraping {page}: {e}")
+                  print(f"Error processing page {page}: {e}")
 
-          # Format and construct the total unified XML document
           now_global = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
           rss_content = f"""<?xml version="1.0" encoding="UTF-8" ?>
           <rss version="2.0">
           <channel>
             <title>Boles Junior High Sports Alerts</title>
-            <link>https://facebook.combolesjh</link>
+            <link>https://www.facebook.com/bolesjh</link>
             <description>Self-hosted Facebook RSS stream for parents.</description>
             <pubDate>{now_global}</pubDate>
             {all_items_xml}
