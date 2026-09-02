@@ -1,10 +1,10 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <rss version="2.0">
-<channel>
-  <title>Boles Junior High Sports Alerts</title>
-  <link>https://www.facebook.com/bolesjh</link>
-  <description>Self-hosted Facebook RSS stream for parents.</description>
-  <pubDate>Wed, 02 Sep 2026 17:01:05 GMT</pubDate>
-  
-</channel>
+  <channel>
+    <title>Boles Junior High Sports Alerts</title>
+    <link>https://www.facebook.com/bolesjh</link>
+    <description>Self-hosted Facebook RSS stream for parents.</description>
+    <lastBuildDate>Wed, 02 Sep 2026 17:13:55 GMT</lastBuildDate>
+    <pubDate>Wed, 02 Sep 2026 17:13:55 GMT</pubDate>
+  </channel>
 </rss>
