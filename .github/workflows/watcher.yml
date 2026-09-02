@@ -1,60 +1,88 @@
-name: Facebook Watcher
+name: Generate Free RSS Feed
 
 on:
   schedule:
-    - cron: '0 * * * *' # Wakes up automatically every single hour
-  workflow_dispatch: # Allows you to press a button to force-test it
+    - cron: '0 * * * *' # Automatically updates your RSS feed file every hour
+  workflow_dispatch: # Lets you push a button to manually force an update
 
 permissions:
-  contents: write # Grants permission to update the text checkpoint tracking file
+  contents: write
 
 jobs:
-  scrape-and-post:
+  build-rss:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Fetch Clean Facebook Data
-        run: |
-          # Uses the open-source RSSHub engine to cleanly extract BolesJH text data
-          curl -s -L -A "Mozilla/5.0" "https://rsshub.app" > feed.xml
-          
-          # Extracts the most recent post text content from the clean data loop
-          grep -oP '(?<=<description><!\[CDATA\[).*?(?=\]\]></description>)' feed.xml | head -n 1 > live_post.txt
-          
-          # Cleans up any messy system HTML fragments from the raw string
-          sed -i 's/<[^>]*>//g' live_post.txt
-          
-          echo "CURRENT_POST=$(cat live_post.txt | head -c 200)" >> $GITHUB_ENV
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-      - name: Compare and Broadcast to Telegram
-        env:
-          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Scrape Facebook and Build XML File
         run: |
-          # Checks for your tracking checkpoint log
-          if [ -f tracking.txt ]; then
-            LAST_POST=$(cat tracking.txt)
-          else
-            LAST_POST=""
-          fi
-          
-          LIVE_POST=$(cat live_post.txt)
-          
-          # Only executes the notification if the new post text contains data and is new
-          if [ ! -z "$LIVE_POST" ] && [ "$LIVE_POST" != "$LAST_POST" ]; then
-            curl -s -X POST "https://telegram.org" \
-              -d "chat_id=$CHAT_ID" \
-              -d "text=🐾 NEW BOLES JH POST:%0A%0A$LIVE_POST%0A%0A🔗 Link: https://www.facebook.com/bolesjh"
-            
-            echo "$LIVE_POST" > tracking.txt
-          fi
+          python -c '
+          import urllib.request
+          import re
+          import datetime
+          import html
 
-      - name: Save Tracking State
+          # Fetch public data from Boles JH Facebook
+          req = urllib.request.Request(
+              "https://facebook.com",
+              headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+          )
+
+          try:
+              with urllib.request.urlopen(req) as response:
+                  page_html = response.read().decode("utf-8")
+              
+              # Extract latest text posts from the backend data layout
+              matches = re.findall(r"\"text\":\"([^\"]+)\"", page_html)
+              if not matches:
+                  print("No text found.")
+                  exit(0)
+
+              # Filter for meaningful updates
+              valid_posts = [p for p in matches if len(p) > 15 and any(k in p for k in ["Boles", "Junior", "game", "sports", "school", "practice"])]
+              live_post = valid_posts[0] if valid_posts else matches[0]
+              
+              # Clean up messy unicode symbols
+              live_post = live_post.encode().decode("unicode-escape").replace("\\n", "\n")
+              clean_text = html.escape(live_post)
+
+              # Format the actual XML RSS structure
+              now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
+              rss_content = f"""<?xml version="1.0" encoding="UTF-8" ?>
+              <rss version="2.0">
+              <channel>
+                <title>Boles Junior High Sports Alerts</title>
+                <link>https://facebook.com</link>
+                <description>Self-hosted Facebook RSS stream for parents.</description>
+                <pubDate>{now}</pubDate>
+                <item>
+                  <title>New Update from Boles JH</title>
+                  <description>{clean_text}</description>
+                  <link>https://facebook.com</link>
+                  <pubDate>{now}</pubDate>
+                </item>
+              </channel>
+              </rss>"""
+
+              # Save it directly into the repository as a hosted web file
+              with open("feed.xml", "w", encoding="utf-8") as f:
+                f.write(rss_content)
+              print("Successfully generated feed.xml file!")
+
+          except Exception as e:
+              print(f"Error: {e}")
+          '
+
+      - name: Publish XML File Live to the Internet
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tracking.txt || true
-          git commit -m "Update tracking checkpoint [skip ci]" || true
+          git config --global user.email "41898282+github-actions[bot]@://github.com"
+          git add feed.xml || true
+          git commit -m "Update live RSS XML feed [skip ci]" || true
           git push || true
