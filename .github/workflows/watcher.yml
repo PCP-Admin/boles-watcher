@@ -15,83 +15,58 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Scrape Facebook and Build XML File
+      - name: Fetch Clean Data and Build XML File
         run: |
-          python -c '
-          import urllib.request
-          import re
-          import datetime
-          import html
+          # Wake up and create a blank layout file to compile the item data blocks
+          echo "" > items.txt
 
-          pages = ["BolesBulldogsAthletics", "bolesjh"]
-          all_items_xml = ""
+          # Loop directly through your target Facebook account endpoints
+          for page in BolesBulldogsAthletics bolesjh; do
+            echo "Processing page: $page"
+            
+            # Use an open-source data gateway to safely read Meta posts without getting blocked
+            curl -s -L -A "Mozilla/5.0" "https://rsshub.app" > raw_feed.xml
+            
+            # Isolate and clean the single newest post text body string from the output loop
+            grep -oP '(?<=<description><!\[CDATA\[).*?(?=\]\]></description>)' raw_feed.xml | head -n 1 > post_text.txt
+            sed -i 's/<[^>]*>//g' post_text.txt # Wipe away any messy web link tags
+            
+            LIVE_POST=$(cat post_text.txt)
+            
+            # Assemble the structured RSS block if valid text information is pulled
+            if [ ! -z "$LIVE_POST" ]; then
+              NOW=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
+              echo "<item>" >> items.txt
+              echo "  <title>New Update from $page</title>" >> items.txt
+              echo "  <description>$LIVE_POST</description>" >> items.txt
+              echo "  <link>https://facebook.com</link>" >> items.txt
+              echo "  <pubDate>$NOW</pubDate>" >> items.txt
+              echo "</item>" >> items.txt
+            fi
+          done
 
-          for page in pages:
-              # Disguise the script request headers perfectly to mimic Google Chrome
-              req = urllib.request.Request(
-                  f"https://www.facebook.com/{page}",
-                  headers={
-                      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                      "Accept-Language": "en-US,en;q=0.9"
-                  }
-              )
-
-              try:
-                  with urllib.request.urlopen(req) as response:
-                      page_html = response.read().decode("utf-8")
-                  
-                  # Target raw text definitions hidden inside Meta script tags
-                  matches = re.findall(r"\"text\":\"([^\"]+)\"", page_html)
-                  if not matches:
-                      continue
-
-                  # Filter out structural button noise strings 
-                  valid_posts = [p for p in matches if len(p) > 20 and not any(x in p for x in ["log in", "create account", "privacy", "cookie"])]
-                  
-                  if valid_posts:
-                      # Decode unicode markers smoothly (\u0020, etc.)
-                      raw_text = valid_posts[0].encode().decode("unicode-escape").replace("\\n", "\n")
-                      clean_text = html.escape(raw_text)
-
-                      now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
-                      
-                      all_items_xml += f"""
-                      <item>
-                        <title>New Update from {page}</title>
-                        <description>{clean_text}</description>
-                        <link>https://www.facebook.com/{page}</link>
-                        <pubDate>{now}</pubDate>
-                      </item>"""
-
-              except Exception as e:
-                  print(f"Error processing page {page}: {e}")
-
-          now_global = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
-          rss_content = f"""<?xml version="1.0" encoding="UTF-8" ?>
+          # Combine the system tags and compiled item blocks into a unified output file
+          ALL_ITEMS=$(cat items.txt)
+          NOW_GLOBAL=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
+          
+          cat <<EOF > feed.xml
+          <?xml version="1.0" encoding="UTF-8" ?>
           <rss version="2.0">
           <channel>
             <title>Boles Junior High Sports Alerts</title>
             <link>https://www.facebook.com/bolesjh</link>
             <description>Self-hosted Facebook RSS stream for parents.</description>
-            <pubDate>{now_global}</pubDate>
-            {all_items_xml}
+            <pubDate>$NOW_GLOBAL</pubDate>
+            $ALL_ITEMS
           </channel>
-          </rss>"""
-
-          with open("feed.xml", "w", encoding="utf-8") as f:
-              f.write(rss_content)
+          </rss>
+          EOF
           print("Successfully generated aggregated feed.xml file!")
-          '
 
       - name: Publish XML File Live to the Internet
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "41898282+github-actions[bot]@://github.com"
           git add feed.xml || true
           git commit -m "Update live RSS XML feed [skip ci]" || true
           git push || true
