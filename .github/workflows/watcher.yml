@@ -84,11 +84,10 @@ jobs:
           print("Successfully generated aggregated feed.xml file!")
           '
 
-
       - name: Publish XML File Live to the Internet
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@://github.com"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add feed.xml || true
           git commit -m "Update live RSS XML feed [skip ci]" || true
           git push || true
