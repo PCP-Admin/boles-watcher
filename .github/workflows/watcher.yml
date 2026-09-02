@@ -2,7 +2,7 @@ name: Generate Free RSS Feed
 
 on:
   schedule:
-    - cron: '0 * * * *' # Automatically updates your RSS feed file every hour
+    - cron: '*/30 * * * *' # Automatically updates your RSS feed file every 30 minutes
   workflow_dispatch: # Lets you push a button to manually force an update
 
 permissions:
@@ -28,56 +28,62 @@ jobs:
           import datetime
           import html
 
-          # Fetch public data from Boles JH Facebook
-          req = urllib.request.Request(
-              "https://facebook.com",
-              headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-          )
+          # Define the target pages you want to watch
+          pages = ["BolesBulldogsAthletics", "bolesjh"]
+          all_items_xml = ""
 
-          try:
-              with urllib.request.urlopen(req) as response:
-                  page_html = response.read().decode("utf-8")
-              
-              # Extract latest text posts from the backend data layout
-              matches = re.findall(r"\"text\":\"([^\"]+)\"", page_html)
-              if not matches:
-                  print("No text found.")
-                  exit(0)
+          for page in pages:
+              req = urllib.request.Request(
+                  f"https://facebook.com{page}",
+                  headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+              )
 
-              # Filter for meaningful updates
-              valid_posts = [p for p in matches if len(p) > 15 and any(k in p for k in ["Boles", "Junior", "game", "sports", "school", "practice"])]
-              live_post = valid_posts[0] if valid_posts else matches[0]
-              
-              # Clean up messy unicode symbols
-              live_post = live_post.encode().decode("unicode-escape").replace("\\n", "\n")
-              clean_text = html.escape(live_post)
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      page_html = response.read().decode("utf-8")
+                  
+                  matches = re.findall(r"\"text\":\"([^\"]+)\"", page_html)
+                  if not matches:
+                      continue
 
-              # Format the actual XML RSS structure
-              now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
-              rss_content = f"""<?xml version="1.0" encoding="UTF-8" ?>
-              <rss version="2.0">
-              <channel>
-                <title>Boles Junior High Sports Alerts</title>
-                <link>https://facebook.com</link>
-                <description>Self-hosted Facebook RSS stream for parents.</description>
-                <pubDate>{now}</pubDate>
-                <item>
-                  <title>New Update from Boles JH</title>
-                  <description>{clean_text}</description>
-                  <link>https://facebook.com</link>
-                  <pubDate>{now}</pubDate>
-                </item>
-              </channel>
-              </rss>"""
+                  valid_posts = [p for p in matches if len(p) > 15 and any(k in p for k in ["Boles", "Junior", "game", "sports", "school", "practice", "Athletics", "Bulldogs"])]
+                  live_post = valid_posts if valid_posts else matches
+                  
+                  live_post = live_post[0].encode().decode("unicode-escape").replace("\\n", "\n")
+                  clean_text = html.escape(live_post)
 
-              # Save it directly into the repository as a hosted web file
-              with open("feed.xml", "w", encoding="utf-8") as f:
-                f.write(rss_content)
-              print("Successfully generated feed.xml file!")
+                  now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
+                  
+                  # Append each separate school page post into the core RSS feed body
+                  all_items_xml += f"""
+                  <item>
+                    <title>New Update from {page}</title>
+                    <description>{clean_text}</description>
+                    <link>https://facebook.com{page}</link>
+                    <pubDate>{now}</pubDate>
+                  </item>"""
 
-          except Exception as e:
-              print(f"Error: {e}")
+              except Exception as e:
+                  print(f"Error scraping {page}: {e}")
+
+          # Format and construct the total unified XML document
+          now_global = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
+          rss_content = f"""<?xml version="1.0" encoding="UTF-8" ?>
+          <rss version="2.0">
+          <channel>
+            <title>Boles Junior High Sports Alerts</title>
+            <link>https://facebook.combolesjh</link>
+            <description>Self-hosted Facebook RSS stream for parents.</description>
+            <pubDate>{now_global}</pubDate>
+            {all_items_xml}
+          </channel>
+          </rss>"""
+
+          with open("feed.xml", "w", encoding="utf-8") as f:
+              f.write(rss_content)
+          print("Successfully generated aggregated feed.xml file!")
           '
+
 
       - name: Publish XML File Live to the Internet
         run: |
