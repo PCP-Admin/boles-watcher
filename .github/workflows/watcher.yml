@@ -1,0 +1,59 @@
+name: Facebook Watcher
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Wakes up automatically every hour on the hour
+  workflow_dispatch: # Gives you a manual override button to force-test it
+
+permissions:
+  contents: write # Explicitly overrides security to allow server logging
+
+jobs:
+  scrape-and-post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Fetch Facebook Content
+        run: |
+          # Downloads public layout code from Boles JH Facebook
+          curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" "https://facebook.com" > fb.html
+          
+          # Extracts raw post metadata text cleanly
+          grep -oP '"text":"[^"]+"' fb.html | head -n 1 | sed 's/"text":"//;s/"//' > live_post.txt
+          
+          echo "CURRENT_POST=$(cat live_post.txt)" >> $GITHUB_ENV
+
+      - name: Compare and Broadcast
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Loads current file checkpoint if it exists
+          if [ -f tracking.txt ]; then
+            LAST_POST=$(cat tracking.txt)
+          else
+            LAST_POST=""
+          fi
+          
+          LIVE_POST="${{ env.CURRENT_POST }}"
+          
+          # Only runs if text is valid and different from the last tracked post
+          if [ ! -z "$LIVE_POST" ] && [ "$LIVE_POST" != "$LAST_POST" ]; then
+            # Formats and delivers text straight to Telegram API pipeline
+            CLEAN_TEXT=$(echo "$LIVE_POST" | jq -sRr @uri)
+            curl -s -X POST "https://telegram.org" \
+              -d "chat_id=$CHAT_ID" \
+              -d "text=🐾 NEW BOLES JH POST:%0A%0A$LIVE_POST%0A%0A🔗 Link: https://facebook.com"
+            
+            echo "$LIVE_POST" > tracking.txt
+          fi
+
+      - name: Commit Tracking Checkpoint
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tracking.txt || true
+          git commit -m "Update last seen post marker [skip ci]" || true
+          git push || true
